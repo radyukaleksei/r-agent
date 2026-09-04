@@ -12,6 +12,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [newProjectName, setNewProjectName] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -31,10 +32,20 @@ export default function DashboardPage() {
           </p>
           <button
             className="btn-primary"
-            onClick={() => signInWithPopup(firebaseAuth, new GoogleAuthProvider())}
+            onClick={() => {
+              setAuthError(null);
+              signInWithPopup(firebaseAuth, new GoogleAuthProvider()).catch((err) => {
+                setAuthError(
+                  err?.code === "auth/unauthorized-domain"
+                    ? "Этот домен не разрешён для входа в настройках Firebase (Authentication → Settings → Authorized domains)."
+                    : err?.message ?? "Не удалось войти. Попробуйте ещё раз."
+                );
+              });
+            }}
           >
             Войти через Google
           </button>
+          {authError && <p className="text-accent-rose text-xs max-w-xs">{authError}</p>}
         </div>
       </Centered>
     );
