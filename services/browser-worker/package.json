@@ -1,0 +1,21 @@
+{
+  "name": "@site-network-agent/browser-worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@site-network-agent/shared": "0.1.0",
+    "@site-network-agent/types": "0.1.0",
+    "firebase-admin": "^12.3.0",
+    "playwright": "^1.47.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "tsx": "^4.16.0",
+    "@types/node": "^20.14.0"
+  }
+}

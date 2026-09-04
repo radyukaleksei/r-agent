@@ -1,0 +1,18 @@
+{
+  "name": "site-network-agent",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "build:types": "npm run build --workspace=packages/types",
+    "build:shared": "npm run build --workspace=packages/shared",
+    "build:packages": "npm run build:types && npm run build:shared",
+    "dev:web": "npm run build:packages && npm run dev --workspace=apps/web",
+    "dev:worker": "npm run build:packages && npm run dev --workspace=services/browser-worker",
+    "build:web": "npm run build:packages && npm run build --workspace=apps/web",
+    "build:worker": "npm run build:packages && npm run build --workspace=services/browser-worker"
+  }
+}

@@ -1,0 +1,39 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- users/{userId}/... — пользователь имеет доступ ТОЛЬКО к своим данным.
+    // Проверка request.auth.uid == userId на каждом уровне вложенности —
+    // это то, что не даёт пользователю A прочитать проект пользователя B,
+    // даже если он узнает/подберёт чужой projectId (см. п. "Firebase Security"
+    // исходного ТЗ по инфраструктуре).
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /projects/{projectId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+
+        match /{subcollection}/{docId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+        match /{subcollection}/{docId}/{subsubcollection}/{subDocId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+        match /{subcollection}/{docId}/{subsubcollection}/{subDocId}/{subsubsub}/{subSubDocId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+      }
+    }
+
+    // ---- jobs/{jobId} — единственная top-level коллекция (не вложена под users),
+    // поэтому владение проверяется через поле userId в самом документе.
+    // Запись со стороны клиента запрещена: jobs создаются ТОЛЬКО через
+    // API routes (Vercel, с Firebase Admin SDK, который обходит эти правила),
+    // чтобы гарантировать rate limiting и валидацию payload на сервере.
+    match /jobs/{jobId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow write: if false; // только Admin SDK (browser-worker и apps/web API routes)
+    }
+  }
+}
