@@ -13,24 +13,78 @@ export interface SearchProvider {
 }
 
 /**
- * ОСНОВНОЙ и РЕКОМЕНДУЕМЫЙ способ получения результатов Google Search.
+ * ОСНОВНОЙ провайдер поиска — Serper.dev.
  *
- * Использует Google Programmable Search Engine (Custom Search JSON API):
- * https://developers.google.com/custom-search/v1/overview
+ * Почему не Google Custom Search JSON API (как планировалось изначально):
+ * Google больше не позволяет НОВЫМ Programmable Search Engine включать режим
+ * "искать по всему интернету" — эта возможность оставлена только движкам,
+ * созданным давно (см. официальную справку Google: "you have the option to
+ * set your custom search engine to search the entire web (no new creation
+ * supported)"). Для новых engine'ов доступен только поиск по явно
+ * перечисленным доменам (до 50 штук) — это не подходит для задачи "искать
+ * произвольные сайты по ключевым словам".
  *
- * ОГРАНИЧЕНИЯ (см. п.13 ТЗ — явно указываем, не скрываем):
- *  - Бесплатный тариф: 100 запросов/день, далее платно (см. текущий прайсинг Google).
- *  - CSE в режиме "искать по всему вебу" — это отдельный индекс Google для
- *    Custom Search, а НЕ то же самое ранжирование, что видит обычный
- *    пользователь на google.com. Позиции и состав результатов могут заметно
- *    отличаться от "живой" выдачи.
- *  - Параметр `gl` (страна) и `hl` (язык интерфейса) поддерживаются API
- *    напрямую и работают надёжно — в отличие от эмуляции региона через
- *    браузер (см. BrowserAutomationSearchProvider ниже).
- *  - Официальный API не различает "мобильную" и "десктопную" выдачу
- *    (Google не документирует такой параметр для CSE) — если различие
- *    мобильной/десктопной SERP критично, придётся использовать
- *    BrowserAutomationSearchProvider для этой части, приняв её ограничения.
+ * Serper.dev — это сторонний сервис, который отдаёт результаты обычной
+ * Google-выдачи (organic results) в виде JSON. Регистрация даёт 2500
+ * бесплатных запросов, дальше — платно (~$0.30-1 за 1000 запросов на
+ * момент написания). Ограничения:
+ *  - это сторонний посредник, а не официальный Google API — при больших
+ *    объёмах стоит свериться с их условиями использования;
+ *  - как и у Google CSE, нет официального разделения на "мобильную" и
+ *    "десктопную" выдачу.
+ */
+export class SerperSearchProvider implements SearchProvider {
+  constructor(private readonly apiKey: string) {}
+
+  async search(query: SearchProviderQuery): Promise<SearchResultItem[]> {
+    const res = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": this.apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        q: query.keywords,
+        gl: query.country.toLowerCase(),
+        hl: query.language,
+        num: 10,
+        page: query.page,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Serper API error: ${res.status} ${await res.text()}`);
+    }
+
+    const data = (await res.json()) as {
+      organic?: { link: string; title: string; snippet?: string; position: number }[];
+    };
+
+    const now = Date.now();
+    return (data.organic ?? []).map((item) => ({
+      id: `${query.keywords}_${item.position}`,
+      searchId: "", // проставляется вызывающим кодом
+      position: item.position,
+      url: item.link,
+      normalizedUrl: item.link,
+      domain: safeHostname(item.link),
+      title: item.title,
+      snippet: item.snippet ?? "",
+      sourceQuery: query.keywords,
+      region: query.country,
+      language: query.language,
+      device: query.device,
+      fetchedAt: now,
+    }));
+  }
+}
+
+/**
+ * ЛЕГАСИ-вариант: Google Programmable Search Engine (Custom Search JSON API).
+ * Оставлен на случай, если у аккаунта есть старый engine с уже включённым
+ * "искать по всему интернету" (созданный до ограничения Google) — тогда
+ * он будет работать. Для новых engine'ов — НЕ рабочий вариант, см. комментарий выше.
  */
 export class GoogleProgrammableSearchProvider implements SearchProvider {
   constructor(
@@ -39,7 +93,7 @@ export class GoogleProgrammableSearchProvider implements SearchProvider {
   ) {}
 
   async search(query: SearchProviderQuery): Promise<SearchResultItem[]> {
-    const start = query.page === 1 ? 1 : 11; // 1-indexed, до 10 результатов за запрос
+    const start = query.page === 1 ? 1 : 11;
     const url = new URL("https://www.googleapis.com/customsearch/v1");
     url.searchParams.set("key", this.apiKey);
     url.searchParams.set("cx", this.searchEngineId);
@@ -60,7 +114,7 @@ export class GoogleProgrammableSearchProvider implements SearchProvider {
     const now = Date.now();
     return (data.items ?? []).map((item, i) => ({
       id: `${query.keywords}_${start + i}`,
-      searchId: "", // проставляется вызывающим кодом
+      searchId: "",
       position: start + i,
       url: item.link,
       normalizedUrl: item.link,
@@ -78,31 +132,16 @@ export class GoogleProgrammableSearchProvider implements SearchProvider {
 
 /**
  * ЭКСПЕРИМЕНТАЛЬНАЯ альтернатива: получение выдачи через управляемую
- * браузерную автоматизацию (Playwright), когда нужна "живая" SERP с
- * реальным устройство-зависимым рендерингом.
- *
- * ЯВНЫЕ ОГРАНИЧЕНИЯ И РИСКИ:
- *  - Автоматизированный доступ к google.com/search регулируется Условиями
- *    использования Google — прежде чем включать этот провайдер в
- *    production, стоит свериться с актуальными ToS для вашего юзкейса.
- *  - Верстка/селекторы результатов Google меняются без предупреждения —
- *    парсер потребует регулярного сопровождения.
- *  - При обнаружении автоматизации Google показывает CAPTCHA/interstitial.
- *    Этот провайдер НЕ пытается её решать или обходить — при обнаружении
- *    CAPTCHA он должен немедленно прекратить попытку и вернуть ошибку,
- *    чтобы job перешёл в статус FAILED с понятной причиной, а не завис
- *    или не начал "долбить" Google повторными запросами.
- *
- * Реализация сознательно оставлена как stub — заполните `runSearch`
- * своей логикой, если для вашего юзкейса Programmable Search API
- * недостаточен, приняв риски выше.
+ * браузерную автоматизацию (Playwright). См. ограничения и риски (ToS,
+ * хрупкость верстки, обязательный отказ при CAPTCHA — без попыток обхода)
+ * в README. Оставлена как stub.
  */
 export class BrowserAutomationSearchProvider implements SearchProvider {
   async search(_query: SearchProviderQuery): Promise<SearchResultItem[]> {
     throw new Error(
       "BrowserAutomationSearchProvider не реализован по умолчанию. " +
-        "Используйте GoogleProgrammableSearchProvider, либо реализуйте " +
-        "этот класс самостоятельно, ознакомившись с ограничениями в комментарии выше."
+        "Используйте SerperSearchProvider, либо реализуйте этот класс " +
+        "самостоятельно, ознакомившись с ограничениями в README."
     );
   }
 }
@@ -114,3 +153,4 @@ function safeHostname(url: string): string {
     return "";
   }
 }
+

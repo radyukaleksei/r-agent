@@ -1,6 +1,6 @@
 import type { Browser } from "playwright";
 import { getDb } from "../../firebase/admin";
-import { GoogleProgrammableSearchProvider } from "../../google/searchProvider";
+import { SerperSearchProvider } from "../../google/searchProvider";
 import { normalizeUrl, getRegistrableDomain } from "@site-network-agent/shared";
 import type { AnalysisJob, Device, WebsiteFingerprint } from "@site-network-agent/types";
 
@@ -45,10 +45,9 @@ export async function runExpandNetworkJob(job: AnalysisJob, _browser: Browser): 
     .collection("projects")
     .doc(payload.projectId);
 
-  const apiKey = process.env.GOOGLE_CSE_API_KEY;
-  const cx = process.env.GOOGLE_CSE_ID;
-  if (!apiKey || !cx) throw new Error("GOOGLE_CSE_API_KEY / GOOGLE_CSE_ID не сконфигурированы");
-  const provider = new GoogleProgrammableSearchProvider(apiKey, cx);
+  const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) throw new Error("SERPER_API_KEY не сконфигурирован");
+  const provider = new SerperSearchProvider(apiKey);
 
   // Собираем известные домены проекта, чтобы не заводить дубликаты сайтов.
   const existingSnap = await projectRef.collection("websites").get();

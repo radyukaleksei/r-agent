@@ -1,6 +1,6 @@
 import type { Browser } from "playwright";
 import { getDb } from "../../firebase/admin";
-import { GoogleProgrammableSearchProvider } from "../../google/searchProvider";
+import { SerperSearchProvider } from "../../google/searchProvider";
 import { normalizeUrl } from "@site-network-agent/shared";
 import type { AnalysisJob, Device, SearchResultItem } from "@site-network-agent/types";
 
@@ -23,13 +23,12 @@ export async function runSearchGoogleJob(job: AnalysisJob, _browser: Browser): P
   const payload = job.payload as unknown as SearchGooglePayload;
   const db = getDb();
 
-  const apiKey = process.env.GOOGLE_CSE_API_KEY;
-  const cx = process.env.GOOGLE_CSE_ID;
-  if (!apiKey || !cx) {
-    throw new Error("GOOGLE_CSE_API_KEY / GOOGLE_CSE_ID не сконфигурированы");
+  const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) {
+    throw new Error("SERPER_API_KEY не сконфигурирован");
   }
 
-  const provider = new GoogleProgrammableSearchProvider(apiKey, cx);
+  const provider = new SerperSearchProvider(apiKey);
   const seenUrls = new Set<string>();
   const allResults: SearchResultItem[] = [];
 
