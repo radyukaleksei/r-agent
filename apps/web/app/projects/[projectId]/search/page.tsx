@@ -60,9 +60,28 @@ export default function SearchPage({ params }: { params: { projectId: string } }
   }
 
   async function handleAnalyzeSelected() {
-    for (const row of rows.filter((r) => selected.has(r.resultId))) {
-      await handleAnalyze(row);
-    }
+    if (!user) return;
+    const selectedRows = rows.filter((r) => selected.has(r.resultId));
+    const websiteIds = await Promise.all(
+      selectedRows.map(async (row) => {
+        const result = results.find((r) => r.id === row.resultId);
+        if (!result) return null;
+        return ensureWebsiteForResult(user.uid, projectId, result);
+      })
+    );
+    const validIds = websiteIds.filter((id): id is string => !!id);
+    if (validIds.length === 0) return;
+
+    // Одна ANALYZE_BATCH задача на все выбранные сайты сразу — не N
+    // отдельных задач (см. /api/website/analyze-batch: иначе выбор даже
+    // 3 сайтов упирается в лимит одновременных задач на пользователя).
+    await apiPost("/api/website/analyze-batch", {
+      projectId,
+      websiteIds: validIds,
+      device: "desktop",
+      country: "PL",
+      language: "ru",
+    });
     setSelected(new Set());
   }
 
