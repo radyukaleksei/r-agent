@@ -58,6 +58,8 @@ export async function runAnalyzeBatchJob(job: AnalysisJob, browser: Browser): Pr
           httpStatus: result.httpStatus ?? null,
           finalUrl: result.finalUrl ?? null,
           lastAnalyzedAt: Date.now(),
+          gtmCount: result.gtmContainers.length,
+          externalDomainsCount: result.externalResources.length,
         });
         for (const gtm of result.gtmContainers) {
           batch.set(websiteRef.collection("gtmContainers").doc(gtm.gtmId), {

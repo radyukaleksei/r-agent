@@ -61,11 +61,19 @@ export class SerperSearchProvider implements SearchProvider {
       organic?: { link: string; title: string; snippet?: string; position: number }[];
     };
 
+    // ВАЖНО: поле `position` в ответе Serper нумеруется ЗАНОВО с 1 на каждой
+    // "странице" (page=1 → 1..10, page=2 → СНОВА 1..10, а не 11..20) — это
+    // отличается от Google CSE, где `start` даёт сквозную нумерацию. Если
+    // использовать item.position как есть, при объединении двух страниц
+    // получаются дублирующиеся позиции 1,1,2,2,3,3... Поэтому считаем
+    // абсолютную позицию сами — по порядку элементов в ответе + смещению
+    // от номера страницы, игнорируя присланное значение position.
+    const pageOffset = (query.page - 1) * 10;
     const now = Date.now();
-    return (data.organic ?? []).map((item) => ({
-      id: `${query.keywords}_${item.position}`,
+    return (data.organic ?? []).map((item, index) => ({
+      id: `${query.keywords}_${pageOffset + index + 1}`,
       searchId: "", // проставляется вызывающим кодом
-      position: item.position,
+      position: pageOffset + index + 1,
       url: item.link,
       normalizedUrl: item.link,
       domain: safeHostname(item.link),

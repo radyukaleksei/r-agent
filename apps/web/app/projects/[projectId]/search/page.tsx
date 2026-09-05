@@ -78,6 +78,8 @@ export default function SearchPage({ params }: { params: { projectId: string } }
           title: r.title,
           websiteId: website?.id,
           status: website?.status,
+          gtmCount: website?.gtmCount,
+          externalDomainsCount: website?.externalDomainsCount,
         };
       }),
     [results, websites]

@@ -93,6 +93,13 @@ export interface Website {
   discoveredAtDepth?: number; // 0 = исходный поиск, 1..N = "Расширить сеть"
   lastAnalyzedAt: number | null;
   createdAt: number;
+  /**
+   * Денормализованные счётчики (обновляются worker'ом при анализе) — чтобы
+   * таблица результатов могла показать "GTM: 2" / "Ext. domains: 7" без
+   * отдельного чтения подколлекций на каждую строку.
+   */
+  gtmCount?: number;
+  externalDomainsCount?: number;
 }
 
 export type GTMDetectionMethod =

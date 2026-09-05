@@ -48,6 +48,8 @@ export async function runAnalyzeWebsiteJob(job: AnalysisJob, browser: Browser): 
     httpStatus: result.httpStatus ?? null,
     finalUrl: result.finalUrl ?? null,
     lastAnalyzedAt: Date.now(),
+    gtmCount: result.gtmContainers.length,
+    externalDomainsCount: result.externalResources.length,
   });
 
   for (const gtm of withWebsiteId(result.gtmContainers)) {
