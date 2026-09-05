@@ -150,4 +150,7 @@ export const FETCH_LIMITS = {
   MAX_RESPONSE_BYTES: 15 * 1024 * 1024, // 15 MB
   NAVIGATION_TIMEOUT_MS: 20_000,
   MAX_RESOURCES_PER_PAGE: 300,
+  // Сколько ждать ПОСЛЕ domcontentloaded, чтобы асинхронные трекеры/теги
+  // успели инициализироваться и сделать первые запросы — см. pageAnalyzer.ts.
+  POST_LOAD_SETTLE_MS: 4_000,
 } as const;

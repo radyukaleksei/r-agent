@@ -12,11 +12,13 @@ import type {
 import { detectGTM, type RawScript } from "./gtmDetector";
 import { extractExternalDomains, type CapturedResource } from "./externalDomainExtractor";
 import { detectTrackingIdentifiers } from "./trackingDetector";
+import { resolveFinalDestination } from "./redirectResolver";
 import {
   buildEndpointRecords,
   buildFingerprint,
   buildScriptRecords,
 } from "./fingerprintEngine";
+import { getRegistrableDomain } from "@site-network-agent/shared";
 
 export interface AnalyzeOptions {
   device: "desktop" | "mobile";
@@ -169,10 +171,20 @@ export async function analyzeWebsite(
   let result: WebsiteAnalysisResult;
 
   try {
+    // ВАЖНО: "networkidle" почти никогда не наступает на реальных сайтах с
+    // аналитикой/рекламой — трекеры непрерывно шлют periodic-запросы, из-за
+    // чего page.goto с waitUntil:"networkidle" стабильно упирается в таймаут
+    // и анализ падает с пустым результатом ДАЖЕ на сайтах, где GTM/трекеры
+    // точно есть. Правильная стратегия: ждать только "domcontentloaded"
+    // (наступает быстро и предсказуемо), затем дать странице фиксированное
+    // время на то, чтобы асинхронные скрипты успели создать свои теги и
+    // сделать первые сетевые запросы — их мы уже ловим через page.route()
+    // независимо от того, "затих" ли сетевой трафик страницы в целом.
     const response = await page.goto(url, {
       timeout: FETCH_LIMITS.NAVIGATION_TIMEOUT_MS,
-      waitUntil: "networkidle",
+      waitUntil: "domcontentloaded",
     });
+    await page.waitForTimeout(FETCH_LIMITS.POST_LOAD_SETTLE_MS);
 
     redirectCount = response?.request().redirectedFrom() ? countRedirects(response.request()) : 0;
     if (redirectCount > FETCH_LIMITS.MAX_REDIRECTS) {
@@ -222,6 +234,15 @@ export async function analyzeWebsite(
 
     const externalResources = extractExternalDomains(finalUrl, capturedResources);
 
+    // Внешние гиперссылки (<a href>) — Playwright их не ловит как "resource"
+    // (это не сетевой запрос, а просто атрибут DOM), поэтому вытаскиваем
+    // отдельно и для каждой резолвим РЕАЛЬНЫЙ пункт назначения по цепочке
+    // редиректов (клики никто не делает — только HTTP HEAD/GET, см.
+    // redirectResolver.ts). Ограничиваем количество, чтобы не растягивать
+    // анализ одной страницы на минуты при сотнях ссылок.
+    const linkResources = await extractAndResolveOutboundLinks(page, finalUrl);
+    externalResources.push(...linkResources);
+
     const scripts = buildScriptRecords(
       "",
       rawScripts.map((s) => ({ url: s.url, content: s.content }))
@@ -265,6 +286,52 @@ export async function analyzeWebsite(
   }
 
   return result;
+}
+
+const MAX_LINKS_TO_RESOLVE = 15;
+
+async function extractAndResolveOutboundLinks(
+  page: Page,
+  pageUrl: string
+): Promise<ExternalResource[]> {
+  const pageDomain = getRegistrableDomain(new URL(pageUrl).hostname);
+
+  const rawHrefs = await page.$$eval("a[href]", (nodes) =>
+    nodes.map((n) => n.getAttribute("href")).filter((h): h is string => !!h)
+  );
+
+  const externalUrls = new Set<string>();
+  for (const href of rawHrefs) {
+    let absolute: URL;
+    try {
+      absolute = new URL(href, pageUrl);
+    } catch {
+      continue; // "mailto:", "javascript:void(0)" и т.п.
+    }
+    if (absolute.protocol !== "http:" && absolute.protocol !== "https:") continue;
+    if (getRegistrableDomain(absolute.hostname) === pageDomain) continue; // внутренняя ссылка
+    externalUrls.add(absolute.toString());
+    if (externalUrls.size >= MAX_LINKS_TO_RESOLVE) break;
+  }
+
+  const results: ExternalResource[] = [];
+  for (const link of externalUrls) {
+    const resolved = await resolveFinalDestination(link);
+    const domain = getRegistrableDomain(new URL(link).hostname);
+    results.push({
+      id: `link_${domain}_${results.length}`,
+      websiteId: "",
+      domain,
+      resourceType: "LINK",
+      category: "UNKNOWN",
+      sampleSourceUrl: link,
+      occurrenceCount: 1,
+      locations: ["html:a[href]"],
+      finalDomain: resolved.finalDomain || undefined,
+      redirectChain: resolved.redirectChain.length > 0 ? resolved.redirectChain : undefined,
+    });
+  }
+  return results;
 }
 
 function mapResourceType(pwType: string): CapturedResource["type"] {

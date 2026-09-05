@@ -140,6 +140,14 @@ export interface ExternalResource {
   sampleSourceUrl: string;
   occurrenceCount: number;
   locations: string[]; // где встречается: "html", "script:xyz.js", ...
+  /**
+   * Только для resourceType === "LINK": куда РЕАЛЬНО ведёт ссылка после всех
+   * HTTP-редиректов (см. redirectResolver.ts). Домен самой ссылки может быть
+   * промежуточным редирект-сервисом (трекер перехода, укорачиватель) —
+   * finalDomain показывает настоящий пункт назначения.
+   */
+  finalDomain?: string;
+  redirectChain?: string[];
 }
 
 export type TrackingProvider =
